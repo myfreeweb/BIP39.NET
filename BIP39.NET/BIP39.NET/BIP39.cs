@@ -4,7 +4,7 @@ using System.Collections;
 using System.Linq;
 using System.Text;
 using System.Threading.Tasks;
-using Bitcoin.BitcoinUtilities;
+using PCLCrypto;
 
 namespace Bitcoin.BIP39
 {
@@ -12,15 +12,13 @@ namespace Bitcoin.BIP39
     /// A .NET implementation of the Bitcoin Improvement Proposal - 39 (BIP39)
     /// BIP39 specification used as reference located here: https://github.com/bitcoin/bips/blob/master/bip-0039.mediawiki
     /// Made by thashiznets@yahoo.com.au
-    /// v1.0.1.1
-    /// I ♥ Bitcoin :)
-    /// Bitcoin:1ETQjMkR1NNh4jwLuN5LxY7bMsHC9PUPSV
+    /// Updated by @myfreeweb to get rid of BitcoinUtilities, use PCLCrypto
     /// </summary>
     public class BIP39
     {
         #region Private Attributes
 
-        private byte[] _entropyBytes;        
+        private byte[] _entropyBytes;
         private byte[] _passphraseBytes;
         private Language _language;
         private List<int> _wordIndexList; //I made this an attribute because then we can keep the same index and swap between languages for experimenting
@@ -58,7 +56,7 @@ namespace Bitcoin.BIP39
                 throw (new Exception("entropy size must be a multiple of "+cEntropyMultiple+" (divisible by "+cEntropyMultiple+" with no remainder) and must be greater than " + (cMinimumEntropyBits-1) + " and less than "+(cMaximumEntropyBits+1)));
             }
 
-            _entropyBytes = Utilities.GetRandomBytes(entropySize / cBitsInByte); //crypto random entropy of the specified size
+            _entropyBytes = WinRTCrypto.CryptographicBuffer.GenerateRandom((uint)(entropySize / cBitsInByte)); // BitcoinUtilities' random thing is horrible, by the way
             pInit(passphrase, language);
         }
 
@@ -88,8 +86,8 @@ namespace Bitcoin.BIP39
         /// <param name="language">Optional language to use for wordlist, if not specified it will auto detect language and if it can't detect it will default to English</param>
         public BIP39(string mnemonicSentence, string passphrase = cEmptyString, Language language=Language.Unknown)
         {
-            _mnemonicSentence = Utilities.NormaliseStringNfkd(mnemonicSentence.Trim()); //just making sure we don't have any leading or trailing spaces
-            _passphraseBytes = UTF8Encoding.UTF8.GetBytes(Utilities.NormaliseStringNfkd(passphrase));
+            _mnemonicSentence = NormaliseStringNfkd(mnemonicSentence.Trim()); //just making sure we don't have any leading or trailing spaces
+            _passphraseBytes = UTF8Encoding.UTF8.GetBytes(NormaliseStringNfkd(passphrase));
             string[] words = _mnemonicSentence.Split(new char[] { ' ' });
 
             //no language specified try auto detect it
@@ -112,7 +110,7 @@ namespace Bitcoin.BIP39
 
             _language = language;
             _wordIndexList = pRebuildWordIndexes(words);
-            _entropyBytes = pProcessIntToBitsThenBytes(_wordIndexList);   
+            _entropyBytes = pProcessIntToBitsThenBytes(_wordIndexList);
         }
 
         #endregion
@@ -128,7 +126,7 @@ namespace Bitcoin.BIP39
         /// <returns>A BIP39 object</returns>
         public static async Task<BIP39> GetBIP39Async(int entropySize = cMinimumEntropyBits, string passphrase = cEmptyString, Language language = Language.English)
         {
-            byte[] entropyBytes = await Utilities.GetRandomBytesAsync(entropySize / cBitsInByte);
+            byte[] entropyBytes = WinRTCrypto.CryptographicBuffer.GenerateRandom((uint)(entropySize / cBitsInByte));
             return new BIP39(entropyBytes, passphrase, language);
         }
 
@@ -225,9 +223,9 @@ namespace Bitcoin.BIP39
         /// <returns>Seed bytes that can be used to create a root in BIP32</returns>
         public static byte[] GetSeedBytes(string mnemonicSentence, string passphrase=cEmptyString)
         {
-            mnemonicSentence = Utilities.NormaliseStringNfkd(mnemonicSentence);
-            byte[] salt = Utilities.MergeByteArrays(UTF8Encoding.UTF8.GetBytes(cSaltHeader), UTF8Encoding.UTF8.GetBytes(Utilities.NormaliseStringNfkd(passphrase)));
-            return Rfc2898_pbkdf2_hmacsha512.PBKDF2(UTF8Encoding.UTF8.GetBytes(mnemonicSentence), salt);
+            mnemonicSentence = NormaliseStringNfkd(mnemonicSentence);
+            byte[] salt = MergeByteArrays(UTF8Encoding.UTF8.GetBytes(cSaltHeader), UTF8Encoding.UTF8.GetBytes(NormaliseStringNfkd(passphrase)));
+            return PBKDF2(UTF8Encoding.UTF8.GetBytes(mnemonicSentence), salt);
         }
 
         /// <summary>
@@ -238,9 +236,9 @@ namespace Bitcoin.BIP39
         /// <returns>Hex string encoded seed bytes that can be used to create a root in BIP32</returns>
         public static string GetSeedBytesHexString(string mnemonicSentence, string passphrase = cEmptyString)
         {
-            mnemonicSentence = Utilities.NormaliseStringNfkd(mnemonicSentence);
-            byte[] salt = Utilities.MergeByteArrays(UTF8Encoding.UTF8.GetBytes(cSaltHeader), UTF8Encoding.UTF8.GetBytes(Utilities.NormaliseStringNfkd(passphrase)));
-            return Utilities.BytesToHexString(Rfc2898_pbkdf2_hmacsha512.PBKDF2(UTF8Encoding.UTF8.GetBytes(mnemonicSentence), salt));
+            mnemonicSentence = NormaliseStringNfkd(mnemonicSentence);
+            byte[] salt = MergeByteArrays(UTF8Encoding.UTF8.GetBytes(cSaltHeader), UTF8Encoding.UTF8.GetBytes(NormaliseStringNfkd(passphrase)));
+            return BytesToHexString(PBKDF2(UTF8Encoding.UTF8.GetBytes(mnemonicSentence), salt));
         }
 
         #endregion
@@ -252,16 +250,16 @@ namespace Bitcoin.BIP39
         /// </summary>
         private void pInit(String passphrase, Language language)
         {
-            _passphraseBytes = UTF8Encoding.UTF8.GetBytes(Utilities.NormaliseStringNfkd(passphrase));
+            _passphraseBytes = UTF8Encoding.UTF8.GetBytes(NormaliseStringNfkd(passphrase));
             _language = language;
-            byte[] allChecksumBytes = Utilities.Sha256Digest(_entropyBytes,0,_entropyBytes.Length); //sha256 the entropy bytes to get all the checksum bits
+            byte[] allChecksumBytes = Sha256Digest(_entropyBytes,0,_entropyBytes.Length); //sha256 the entropy bytes to get all the checksum bits
             
-            _entropyBytes = Utilities.SwapEndianBytes(_entropyBytes); //seems I had to change the endianess of the bytes here to match the test vectors.....
+            _entropyBytes = SwapEndianBytes(_entropyBytes); //seems I had to change the endianess of the bytes here to match the test vectors.....
 
             int numberOfChecksumBits = (_entropyBytes.Length * cBitsInByte) / cEntropyMultiple; //number of bits to take from the checksum bits, varies on entropy size as per spec
             BitArray entropyConcatChecksumBits = new BitArray((_entropyBytes.Length * cBitsInByte) + numberOfChecksumBits);
 
-            allChecksumBytes = Utilities.SwapEndianBytes(allChecksumBytes); //yet another endianess change of some different bytes to match the test vectors.....             
+            allChecksumBytes = SwapEndianBytes(allChecksumBytes); //yet another endianess change of some different bytes to match the test vectors.....             
             
             int index=0;
 
@@ -557,7 +555,7 @@ namespace Bitcoin.BIP39
             }
 
             //now we get actual checksum of our entropy bytes
-            BitArray allChecksumBits = new BitArray(Utilities.SwapEndianBytes(Utilities.Sha256Digest(Utilities.SwapEndianBytes(entropy), 0, entropy.Length))); //sha256 the entropy bytes to get all the checksum bits
+            BitArray allChecksumBits = new BitArray(SwapEndianBytes(Sha256Digest(SwapEndianBytes(entropy), 0, entropy.Length))); //sha256 the entropy bytes to get all the checksum bits
 
             for(int i=0; i<checksumActual.Length;i++)
             {
@@ -588,7 +586,7 @@ namespace Bitcoin.BIP39
         {
             get
             {
-                return Utilities.SwapEndianBytes(_entropyBytes);
+                return SwapEndianBytes(_entropyBytes);
             }
         }
 
@@ -599,7 +597,7 @@ namespace Bitcoin.BIP39
         {
             set
             {
-                _passphraseBytes = UTF8Encoding.UTF8.GetBytes(Utilities.NormaliseStringNfkd(value));
+                _passphraseBytes = UTF8Encoding.UTF8.GetBytes(NormaliseStringNfkd(value));
             }
         }
         
@@ -649,8 +647,8 @@ namespace Bitcoin.BIP39
             get
             {
                 //literally this is the bulk of the decoupled seed generation code, easy.
-                byte[] salt = Utilities.MergeByteArrays(UTF8Encoding.UTF8.GetBytes(cSaltHeader),_passphraseBytes);
-                return Rfc2898_pbkdf2_hmacsha512.PBKDF2(UTF8Encoding.UTF8.GetBytes(Utilities.NormaliseStringNfkd(MnemonicSentence)), salt);
+                byte[] salt = MergeByteArrays(UTF8Encoding.UTF8.GetBytes(cSaltHeader),_passphraseBytes);
+                return PBKDF2(UTF8Encoding.UTF8.GetBytes(NormaliseStringNfkd(MnemonicSentence)), salt);
             }
         }
 
@@ -661,7 +659,7 @@ namespace Bitcoin.BIP39
         {
             get
             {
-                return Utilities.BytesToHexString(SeedBytes);
+                return BytesToHexString(SeedBytes);
             }
         }
 
@@ -680,5 +678,100 @@ namespace Bitcoin.BIP39
         }
 
         #endregion
+
+        /// <summary>
+        /// Merges two byte arrays
+        /// </summary>
+        /// <param name="source1">first byte array</param>
+        /// <param name="source2">second byte array</param>
+        /// <returns>A byte array which contains source1 bytes followed by source2 bytes</returns>
+        private static Byte[] MergeByteArrays(Byte[] source1, Byte[] source2)
+        {
+            //Most efficient way to merge two arrays this according to http://stackoverflow.com/questions/415291/best-way-to-combine-two-or-more-byte-arrays-in-c-sharp
+            Byte[] buffer = new Byte[source1.Length + source2.Length];
+            System.Buffer.BlockCopy(source1, 0, buffer, 0, source1.Length);
+            System.Buffer.BlockCopy(source2, 0, buffer, source1.Length, source2.Length);
+            return buffer;
+        }
+
+        /// <summary>
+        /// Returns the string back, because who cares. PCLs don't have String.Normalize, so
+        /// that's been using an external DLL in the original library, well, fuck that -- @myfreeweb
+        /// </summary>
+        /// <param name="toNormalise">String to be normalised</param>
+        /// <returns>Normalised string</returns>
+        private static string NormaliseStringNfkd(string toNormalise)
+        {
+            return toNormalise;
+        }
+
+        /// <summary>
+        /// Turns a byte array into a Hex encoded string
+        /// </summary>
+        /// <param name="bytes">The bytes to encode to hex</param>
+        /// <returns>The hex encoded representation of the bytes</returns>
+        private static string BytesToHexString(byte[] bytes)
+        {
+            return string.Concat(bytes.Select(byteb => byteb.ToString("x2")).ToArray());
+        }
+
+        // Fuck writing obvious shit in XML
+        private static byte[] PBKDF2(byte[] message, byte[] salt)
+        {
+            return NetFxCrypto.DeriveBytes.GetBytes(message, salt, 5000, 64);
+        }
+
+        /// <summary>
+        /// Calculates the SHA256 32 byte checksum of the input bytes
+        /// </summary>
+        /// <param name="input">bytes input to get checksum</param>
+        /// <param name="offset">where to start calculating checksum</param>
+        /// <param name="length">length of the input bytes to perform checksum on</param>
+        /// <returns>32 byte array checksum</returns>
+        public static byte[] Sha256Digest(byte[] input, int offset, int length)
+        {
+            return WinRTCrypto.HashAlgorithmProvider.OpenAlgorithm(HashAlgorithm.Sha256).HashData(input.SubArray(offset, length));
+        }
+
+        /// <summary>
+        /// This switches the Endianess of the provided byte array, byte per byte we do bit swappy.
+        /// </summary>
+        /// <param name="bytes">Bytes to change endianess of</param>
+        /// <returns>Bytes with endianess swapped</returns>
+        public static byte[] SwapEndianBytes(byte[] bytes)
+        {
+            byte[] output = new byte[bytes.Length];
+            int index = 0;
+            foreach (byte b in bytes)
+            {
+                byte[] ba = { b };
+                BitArray bits = new BitArray(ba);
+                int newByte = 0;
+                if (bits.Get(7)) newByte++;
+                if (bits.Get(6)) newByte += 2;
+                if (bits.Get(5)) newByte += 4;
+                if (bits.Get(4)) newByte += 8;
+                if (bits.Get(3)) newByte += 16;
+                if (bits.Get(2)) newByte += 32;
+                if (bits.Get(1)) newByte += 64;
+                if (bits.Get(0)) newByte += 128;
+                output[index] = Convert.ToByte(newByte);
+                index++;
+            }
+            //I love lamp
+            return output;
+        }
+
+    }
+
+    public static class Fuck
+    {
+        // http://stackoverflow.com/questions/943635/c-sharp-arrays-getting-a-sub-array-from-an-existing-array
+        public static T[] SubArray<T>(this T[] data, int index, int length)
+        {
+            T[] result = new T[length];
+            Array.Copy(data, index, result, 0, length);
+            return result;
+        }
     }
 }

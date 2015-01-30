@@ -5,8 +5,6 @@ C# (PCL) implementation of the BIP39 Bitcoin Improvement Proposal Document https
 
 This PCL is targeted for Universal Apps (Windows 8.1/Windows Phone 8.1) and .NET 4.5.1 ONLY. No support for Windows 8 or Windows Phone 8/8.1 Silverlight apps.
 
-### PLEASE ENSURE YOU ALSO DOWNLOAD, BUILD AND REFERENCE THE BitcoinUtilities.NET PROJECT LOCATED HERE: https://github.com/Thashiznets/BitcoinUtilities.NET ###
-
 I have included a test GUI which shows you how to use the BIP39 class.
 
 I have created unit tests that test against the English and Japanese test vectors posted here https://raw.githubusercontent.com/trezor/python-mnemonic/master/vectors.json and here https://github.com/Thashiznets/bip32JP.github.io/blob/patch-1/test_JP_BIP39.json
